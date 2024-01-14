@@ -103,8 +103,8 @@ ENV/
 .github/**
 
 # Data directory
-data/
-checkpoints/
+data/flowers/
+checkpoints/model_checkpoint_P2.pth
 
 # Model checkpoing
 model_checkpoint.pth
