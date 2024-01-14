@@ -104,6 +104,8 @@ ENV/
 
 # Data directory
 data/
+checkpoints/
 
 # Model checkpoing
 model_checkpoint.pth
+
