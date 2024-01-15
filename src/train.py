@@ -14,18 +14,6 @@ def main():
     
     args = parser.parse_args()
     
-    print("=========================================")
-    print("          Training Configuration")
-    print("=========================================")
-    print("- Data Directory:\t", args.data_dir)
-    print("- Save Directory:\t", args.save_dir)
-    print("- Architecture:\t\t", args.arch)
-    print("- Learning Rate:\t", args.learning_rate)
-    print("- Hidden Units:\t\t", args.hidden_units)
-    print("- Epochs:\t\t", args.epochs)
-    print("- GPU Enabled:\t\t", args.gpu)
-    print("=========================================\n")
-    
     # Call the train function
     utils.train_model(args.data_dir, args.save_dir, args.arch,
                                 args.learning_rate, args.hidden_units,

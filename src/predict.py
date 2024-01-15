@@ -11,16 +11,6 @@ def main():
     parser.add_argument('--gpu', action='store_true', help='Use GPU for inference if available')
 
     args = parser.parse_args()
-    
-    print("=========================================")
-    print("          Predict Configuration")
-    print("=========================================")
-    print("- Image path:\t\t", args.image_path)
-    print("- Checkpoint path:\t", args.checkpoint)
-    print("- Top K:\t\t", args.top_k)
-    print("- Category filepath:\t", args.category_names)
-    print("- GPU Enabled:\t\t", args.gpu)
-    print("=========================================\n")
 
     # Call the predict function
     utils.predict_image(args.image_path, args.checkpoint,

@@ -158,17 +158,12 @@ def save_checkpoint(model, save_dir, arch, train_dataset, optimizer, name_classe
     torch.save(checkpoint, save_dir + f'model_checkpoint_P2_{arch}.pth')
 
 def train_model(data_dir, save_dir, arch, learning_rate, hidden_units, epochs, gpu):
-    print("Initializing Training...")
-    print("-----------------------------------------")
-    print("Loading Data...")
     train_data, dataloaders = load_data(data_dir)
-    print("Label Mapping...")
+    
     name_classes = label_mapping('../cat_to_name.json')
-    print("Bulding Model...")
+
     model, criterion, optimizer, device = build_model(arch, hidden_units, learning_rate, gpu)
     
-    print("\nTraining Model:")
-    print("-----------------------------------------")
     for epoch in range(epochs):
         model.train()
         running_loss = 0
@@ -206,13 +201,7 @@ def train_model(data_dir, save_dir, arch, learning_rate, hidden_units, epochs, g
         print(f"Validation Loss: \t{validation_loss/len(dataloaders['validation']):.3f}")
         print(f"Validation Acc: \t{(accuracy/len(dataloaders['validation'])*100):.1f}%\n")
         
-    print("\nTraining Complete!")
-    
-    print("\nSaving Model:")
-    print("-----------------------------------------")
     save_checkpoint(model, save_dir, arch, train_data, optimizer, name_classes, epochs)
-    print("Saving Complete!")
-    print("=========================================")
     
 def process_image(image_path):
     ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
@@ -297,18 +286,15 @@ def imshow(image, ax=None, title=None):
 def predict_image(image_path, checkpoint, top_k, category_filepath, gpu):
     ''' Predict the class (or classes) of an image using a trained deep learning model.
     '''
-    print("Initializing Prediction...")
-    print("-----------------------------------------")
-    print("Processing Image...")
     # Process the image
     img = process_image(image_path)
-    print("Converting to Tensor...")
+
     # Convert to tensor
     image_tensor = torch.from_numpy(img).type(torch.FloatTensor)
 
     # Add batch of size 1 to image
     image_tensor = image_tensor.unsqueeze(0)
-    print("Loading Trained Model...")
+
     # Get model trained
     model = load_checkpoint(checkpoint)
     
@@ -321,7 +307,7 @@ def predict_image(image_path, checkpoint, top_k, category_filepath, gpu):
     with torch.no_grad():
         model.eval()  # Set the model to evaluation mode
         output = model.forward(image_tensor)
-    print("Converting probabilities...")
+
     # Convert output probabilities to probabilities
     probabilities = torch.exp(output)
 
@@ -336,34 +322,31 @@ def predict_image(image_path, checkpoint, top_k, category_filepath, gpu):
     idx_to_class = {v: k for k, v in model.class_to_idx.items()}
     top_classes = [idx_to_class[index] for index in top_indices]
     
-    print("Saving prediciton...")
-    display_prediction(img, category_filepath, top_probs, top_classes, checkpoint)
+    display_prediction(img, category_filepath, top_probs, top_classes, checkpoint, top_k)
     
-    print("Saving Complete!")
-    print("=========================================")
-    
-    
-def display_prediction(img, category_filepath, top_probs, top_classes, arch_path):
+def display_prediction(img, category_filepath, top_probs, top_classes, arch_path, top_k):
     # Normalize the probabilities if they don't sum to 1
     probs_normalized = top_probs / np.sum(top_probs)
     
     # Convert indices to classes
     cat_to_name = label_mapping(category_filepath)
-    class_names = [cat_to_name[cls] for cls in top_classes]
+    flower_names = [cat_to_name[cls] for cls in top_classes]
+    
+    print(dict(zip(flower_names, probs_normalized)))
     
     # Plotting the image
     plt.figure(figsize = (15,10))
 
     # Display the image
     ax = plt.subplot(2,1,1)
-    imshow(torch.from_numpy(img), ax, title=class_names[0])
+    imshow(torch.from_numpy(img), ax, title=flower_names[0])
 
     # Plotting the bar chart
     plt.subplot(2,1,2)
-    sns.barplot(x=probs_normalized, y=class_names, color=sns.color_palette()[0])
+    sns.barplot(x=probs_normalized, y=flower_names, color=sns.color_palette()[0])
     
     checkpoint = torch.load(arch_path)
 
     arch = checkpoint['arch']
-    filename = f"{class_names[0].replace(' ', '_')}_prediction_{arch}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.jpg"
+    filename = f"{flower_names[0].replace(' ', '_')}_prediction_{arch}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.jpg"
     plt.savefig(os.path.join('../predictions/', filename))
