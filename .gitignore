@@ -104,7 +104,7 @@ ENV/
 
 # Data directory
 data/flowers/
-checkpoints/model_checkpoint_P2.pth
+checkpoints/
 
 # Model checkpoing
 model_checkpoint.pth
