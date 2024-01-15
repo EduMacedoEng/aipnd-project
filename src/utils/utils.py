@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms, models
-from torchvision.models import vgg16, VGG16_Weights
+from torchvision.models import vgg16, resnet18, VGG16_Weights, ResNet18_Weights
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module='torchvision.models._utils')
 
@@ -92,27 +92,39 @@ def label_mapping(path):
 def build_model(arch, hidden_units, learning_rate, gpu):
     if arch == "vgg16":
         model = vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
+        # Define a new classifier
+        model.classifier = nn.Sequential(
+                                nn.Linear(hidden_units, 4096),
+                                nn.ReLU(),
+                                nn.Dropout(0.5),
+                                nn.Linear(4096, 1024),
+                                nn.ReLU(),
+                                nn.Dropout(0.5),
+                                nn.Linear(1024, 102), # Assuming 102 flower categories
+                                nn.LogSoftmax(dim=1))
+    elif arch == "resnet18":
+        model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        # Replace the last fully connected layer of ResNet18
+        model.fc = nn.Sequential(
+                        nn.Linear(model.fc.in_features, hidden_units),
+                        nn.ReLU(),
+                        nn.Dropout(0.5),
+                        nn.Linear(hidden_units, 102),  # To 102 flower categories
+                        nn.LogSoftmax(dim=1))
     else:
-        # Add other architectures here
-        pass
+        raise ValueError("Unsupported architecture")
     
+    # Freeze parameters
     for param in model.parameters():
         param.requires_grad = False
     
-    # Define a new classifier
-    model.classifier = nn.Sequential(
-                            nn.Linear(hidden_units, 4096),
-                            nn.ReLU(),
-                            nn.Dropout(0.5),
-                            nn.Linear(4096, 1024),
-                            nn.ReLU(),
-                            nn.Dropout(0.5),
-                            nn.Linear(1024, 102), # Assuming 102 flower categories
-                            nn.LogSoftmax(dim=1))
+    # Unfreeze the newly created classifier/fully connected layer
+    for param in getattr(model, 'classifier' if arch == 'vgg16' else 'fc').parameters():
+        param.requires_grad = True
     
     # Define the criterion and optimizer
     criterion = nn.NLLLoss()
-    optimizer = optim.Adam(model.classifier.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=learning_rate)
     
     device = torch.device("cuda" if gpu and torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -125,17 +137,25 @@ def save_checkpoint(model, save_dir, arch, train_dataset, optimizer, name_classe
     idx_to_class = {v: k for k, v in model.class_to_idx.items()}
     class_to_name = {idx_to_class[k]: name_classes[idx_to_class[k]] for k in idx_to_class}
     
+    # Check if the model is VGG16 or ResNet18 and assign the appropriate classifier
+    if arch == 'vgg16':
+        model_layer = model.classifier
+    elif arch == 'resnet18':
+        model_layer = model.fc
+    else:
+        raise ValueError("Unsupported architecture")
+    
     checkpoint = {
         'arch': arch,
         'class_to_idx': model.class_to_idx,
         'state_dict': model.state_dict(),
-        'classifier': model.classifier,
+        'classifier': model_layer, # This now refers to the appropriate layer based on the architecture
         'optimizer_state_dict': optimizer.state_dict(),
         'epochs': epochs,
         'class_to_name': class_to_name
     }
     
-    torch.save(checkpoint, save_dir + 'model_checkpoint_P2.pth')
+    torch.save(checkpoint, save_dir + f'model_checkpoint_P2_{arch}.pth')
 
 def train_model(data_dir, save_dir, arch, learning_rate, hidden_units, epochs, gpu):
     print("Initializing Training...")
@@ -230,26 +250,20 @@ def load_checkpoint(filepath):
     # Load the saved file
     checkpoint = torch.load(filepath)
 
-    # Rebuild the model: Assuming it's a vgg16 model for this example
-    model = vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
-    
-    # Remember to replace the classifier with the same architecture you used before
-    classifier = nn.Sequential(nn.Linear(512 * 7 * 7, 4096),
-                               nn.ReLU(),
-                               nn.Dropout(0.5),
-                               nn.Linear(4096, 1024),
-                               nn.ReLU(),
-                               nn.Dropout(0.5),
-                               nn.Linear(1024, 102)) # Assuming 102 flower categories
-    
-    model.classifier = classifier
+    arch = checkpoint['arch']
+
+    # Dynamically create the model based on the architecture in the checkpoint
+    if arch == 'vgg16':
+        model = vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
+        model.classifier = checkpoint['classifier']  # Load the classifier from the checkpoint
+    elif arch == 'resnet18':
+        model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        model.fc = checkpoint['classifier']  # Load the fully connected layer from the checkpoint
+    else:
+        raise ValueError("Unsupported architecture")
 
     # Load the state dict back into the model
     model.load_state_dict(checkpoint['state_dict'])
-
-    # If you also need to load the optimizer state
-    # optimizer = optim.Adam(model.classifier.parameters(), lr=0.001)
-    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # Load the class_to_idx
     model.class_to_idx = checkpoint['class_to_idx']
@@ -323,30 +337,33 @@ def predict_image(image_path, checkpoint, top_k, category_filepath, gpu):
     top_classes = [idx_to_class[index] for index in top_indices]
     
     print("Saving prediciton...")
-    display_prediction(img, category_filepath, top_probs, top_classes)
+    display_prediction(img, category_filepath, top_probs, top_classes, checkpoint)
     
     print("Saving Complete!")
     print("=========================================")
     
     
-def display_prediction(img, category_filepath, top_probs, top_classes):
-    
+def display_prediction(img, category_filepath, top_probs, top_classes, arch_path):
     # Normalize the probabilities if they don't sum to 1
     probs_normalized = top_probs / np.sum(top_probs)
     
     # Convert indices to classes
     cat_to_name = label_mapping(category_filepath)
     class_names = [cat_to_name[cls] for cls in top_classes]
-
+    
     # Plotting the image
     plt.figure(figsize = (15,10))
-    ax = plt.subplot(2,1,1)
 
     # Display the image
+    ax = plt.subplot(2,1,1)
     imshow(torch.from_numpy(img), ax, title=class_names[0])
 
     # Plotting the bar chart
     plt.subplot(2,1,2)
     sns.barplot(x=probs_normalized, y=class_names, color=sns.color_palette()[0])
-    filename = f"{class_names[0]}_prediction_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.jpg"
+    
+    checkpoint = torch.load(arch_path)
+
+    arch = checkpoint['arch']
+    filename = f"{class_names[0].replace(' ', '_')}_prediction_{arch}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.jpg"
     plt.savefig(os.path.join('../predictions/', filename))
